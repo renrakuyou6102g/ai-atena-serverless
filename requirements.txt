@@ -1,0 +1,6 @@
+runpod
+torch
+transformers
+peft
+accelerate
+requests
