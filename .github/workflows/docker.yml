@@ -42,5 +42,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/renrakuyou6102g/ai-atena-serverless:v4
+            ghcr.io/renrakuyou6102g/ai-atena-serverless:v5
             ghcr.io/renrakuyou6102g/ai-atena-serverless:latest
