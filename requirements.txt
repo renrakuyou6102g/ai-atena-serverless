@@ -6,3 +6,4 @@ peft
 bitsandbytes
 safetensors
 sentencepiece
+huggingface_hub
