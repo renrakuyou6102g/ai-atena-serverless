@@ -1,6 +1,8 @@
 runpod
 torch
 transformers
-peft
 accelerate
-requests
+peft
+bitsandbytes
+safetensors
+sentencepiece
