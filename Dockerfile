@@ -25,4 +25,6 @@ RUN pip3 install --no-cache-dir \
 
 COPY handler.py /workspace/handler.py
 
+COPY ATENA_7B_v9.zip /workspace/ATENA_7B_v9.zip
+
 CMD ["python3", "-u", "/workspace/handler.py"]
