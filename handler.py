@@ -1,8 +1,4 @@
 import os
-import json
-import zipfile
-import urllib.request
-import shutil
 import traceback
 
 import torch
@@ -18,197 +14,97 @@ from peft import PeftModel
 
 
 # ============================================================
-# ATENA 設定
+# パス
 # ============================================================
 
-MODEL_NAME = os.getenv(
-    "MODEL_NAME",
-    "Qwen/Qwen2.5-7B-Instruct"
-)
+BASE_MODEL_DIR = "/workspace/base_model"
+ATENA_ROOT = "/workspace/atena_v9"
 
-MODEL_ZIP_URL = os.getenv(
-    "MODEL_ZIP_URL",
-    ""
-)
-
-ZIP_PATH = "/workspace/ATENA_7B_v9.zip"
-
-EXTRACT_DIR = "/workspace/atena_model"
-
-MAX_NEW_TOKENS = int(
-    os.getenv("MAX_NEW_TOKENS", "300")
-)
+MAX_NEW_TOKENS = 300
 
 
 # ============================================================
-# SYSTEM PROMPT
+# System Prompt
 # ============================================================
 
 SYSTEM_PROMPT = """
 あなたはAI ATENAです。
 必ず自然な日本語で回答してください。
 
-【最重要】
-AI ATENAは、JIGUZAGAで利用できるAIアシスタントとして開発されています。
+【ATENA】
+AI ATENAは、JIGUZAGAで利用できるAIアシスタントとして
+開発されています。
 
-ユーザーから、
-「ATENAとは？」
-「あなたは誰？」
-「JIGUZAGAとATENAの関係は？」
-「ATENAはJIGUZAGAの何？」
-などと聞かれた場合は、次の事実を優先してください。
-
-AI ATENAは、JIGUZAGAで利用できるAIアシスタントとして開発されています。
-JIGUZAGA内で、質問対応、Web検索、文章作成、要約などを支援します。
+JIGUZAGA内で、
+質問対応、
+Web検索、
+文章作成、
+要約などを支援します。
 
 【JIGUZAGA】
 JIGUZAGAは、
 ショート動画、
 LIVE配信、
 AI、
-ショッピング
-などを統合したプラットフォームです。
+ショッピングなどを
+統合したプラットフォームです。
 
-株価予測だけを目的とした投資サービスではありません。
+株価予測だけを目的とした
+投資サービスではありません。
 
 【JIGUMAP】
 JIGUMAPは、
 位置情報付き動画やライブ情報などを
-地図上で扱うためのJIGUZAGAのマップ機能です。
+地図上で扱うための
+JIGUZAGAのマップ機能です。
 
-【現在の制限】
+【制限】
 予約機能は現在実装されていません。
 
 予約を実行した、
 予約できる、
-などと答えないでください。
+などと回答しないでください。
 
 xAI、
 Alibaba、
 アリババクラウド、
 NTTドコモ、
-証券取引所、
-その他の企業がATENAを運営しているという情報を
-勝手に作らないでください。
+証券取引所などを
+ATENAの運営元として勝手に作らないでください。
 
-最新情報が必要な質問については、
-確認できない内容を作り話で補わないでください。
+確認できない情報を
+作り話で補わないでください。
 """
 
 
 # ============================================================
-# ZIPダウンロード
+# LoRAディレクトリ検索
 # ============================================================
 
-def download_model_zip():
-
-    if os.path.exists(ZIP_PATH):
-        print("ATENA ZIP already exists.")
-        return
-
-    if not MODEL_ZIP_URL:
-        raise RuntimeError(
-            "MODEL_ZIP_URL が設定されていません。"
-        )
-
-    print("Downloading ATENA v9 ZIP...")
-    print("URL:", MODEL_ZIP_URL)
-
-    urllib.request.urlretrieve(
-        MODEL_ZIP_URL,
-        ZIP_PATH
-    )
-
-    print(
-        "ZIP downloaded:",
-        os.path.getsize(ZIP_PATH),
-        "bytes"
-    )
-
-
-# ============================================================
-# ZIP展開
-# ============================================================
-
-def extract_model():
-
-    adapter_config = find_adapter_directory(
-        EXTRACT_DIR
-    )
-
-    if adapter_config:
-        print(
-            "ATENA model already extracted:",
-            adapter_config
-        )
-
-        return adapter_config
-
-    if os.path.exists(EXTRACT_DIR):
-        shutil.rmtree(EXTRACT_DIR)
-
-    os.makedirs(
-        EXTRACT_DIR,
-        exist_ok=True
-    )
-
-    print("Extracting ATENA v9...")
-
-    with zipfile.ZipFile(
-        ZIP_PATH,
-        "r"
-    ) as z:
-
-        z.extractall(
-            EXTRACT_DIR
-        )
-
-    adapter_dir = find_adapter_directory(
-        EXTRACT_DIR
-    )
-
-    if not adapter_dir:
-        raise RuntimeError(
-            "adapter_config.json がZIP内に見つかりません。"
-        )
-
-    print(
-        "Adapter directory:",
-        adapter_dir
-    )
-
-    return adapter_dir
-
-
-# ============================================================
-# adapter_config.json を探す
-# ============================================================
-
-def find_adapter_directory(root):
-
-    if not os.path.exists(root):
-        return None
+def find_adapter_dir(root):
 
     for current_root, dirs, files in os.walk(root):
 
         if "adapter_config.json" in files:
-
             return current_root
 
     return None
 
 
-# ============================================================
-# ATENA読み込み
-# ============================================================
+ADAPTER_DIR = find_adapter_dir(ATENA_ROOT)
+
+if ADAPTER_DIR is None:
+
+    raise RuntimeError(
+        "ATENA v9のadapter_config.jsonが見つかりません。"
+    )
+
 
 print("=" * 60)
-print("Starting AI ATENA 7B v9")
+print("AI ATENA 7B v9 STARTING")
+print("BASE MODEL:", BASE_MODEL_DIR)
+print("ADAPTER:", ADAPTER_DIR)
 print("=" * 60)
-
-download_model_zip()
-
-ADAPTER_PATH = extract_model()
 
 
 # ============================================================
@@ -218,16 +114,18 @@ ADAPTER_PATH = extract_model()
 print("Loading tokenizer...")
 
 tokenizer = AutoTokenizer.from_pretrained(
-    MODEL_NAME,
+    BASE_MODEL_DIR,
+    local_files_only=True,
     trust_remote_code=True
 )
 
 
 # ============================================================
-# 4bit設定
+# 4bit
 # ============================================================
 
 bnb_config = BitsAndBytesConfig(
+
     load_in_4bit=True,
 
     bnb_4bit_quant_type="nf4",
@@ -239,14 +137,16 @@ bnb_config = BitsAndBytesConfig(
 
 
 # ============================================================
-# Base model
+# Base Model
 # ============================================================
 
-print("Loading Qwen 7B base model...")
+print("Loading local Qwen 7B...")
 
 base_model = AutoModelForCausalLM.from_pretrained(
 
-    MODEL_NAME,
+    BASE_MODEL_DIR,
+
+    local_files_only=True,
 
     quantization_config=bnb_config,
 
@@ -261,19 +161,16 @@ base_model = AutoModelForCausalLM.from_pretrained(
 
 
 # ============================================================
-# LoRA v9
+# LoRA
 # ============================================================
 
-print(
-    "Loading ATENA v9 LoRA:",
-    ADAPTER_PATH
-)
+print("Loading ATENA v9 LoRA...")
 
 model = PeftModel.from_pretrained(
 
     base_model,
 
-    ADAPTER_PATH,
+    ADAPTER_DIR,
 
     is_trainable=False,
 )
@@ -289,39 +186,35 @@ print("=" * 60)
 
 
 # ============================================================
-# ユーザー入力取得
+# 入力取得
 # ============================================================
 
-def get_user_message(job_input):
+def get_question(job_input):
 
-    # prompt
     prompt = job_input.get("prompt")
 
     if isinstance(prompt, str) and prompt.strip():
         return prompt.strip()
 
-    # message
+
     message = job_input.get("message")
 
     if isinstance(message, str) and message.strip():
         return message.strip()
 
-    # messages
+
     messages = job_input.get("messages")
 
     if isinstance(messages, list):
 
-        for message in reversed(messages):
+        for msg in reversed(messages):
 
-            if not isinstance(message, dict):
+            if not isinstance(msg, dict):
                 continue
 
-            if message.get("role") == "user":
+            if msg.get("role") == "user":
 
-                content = message.get(
-                    "content",
-                    ""
-                )
+                content = msg.get("content", "")
 
                 if isinstance(content, str):
                     return content.strip()
@@ -330,47 +223,55 @@ def get_user_message(job_input):
 
 
 # ============================================================
-# ATENA 推論
+# 推論
 # ============================================================
 
 def generate_answer(question):
 
     messages = [
+
         {
             "role": "system",
-            "content": SYSTEM_PROMPT,
+            "content": SYSTEM_PROMPT
         },
+
         {
             "role": "user",
-            "content": question,
-        },
+            "content": question
+        }
+
     ]
 
-    text = tokenizer.apply_chat_template(
+
+    prompt = tokenizer.apply_chat_template(
 
         messages,
 
         tokenize=False,
 
-        add_generation_prompt=True,
+        add_generation_prompt=True
     )
+
 
     inputs = tokenizer(
 
-        text,
+        prompt,
 
-        return_tensors="pt",
+        return_tensors="pt"
     )
 
-    device = next(
-        model.parameters()
-    ).device
+
+    device = next(model.parameters()).device
+
 
     inputs = {
+
         key: value.to(device)
-        for key, value
-        in inputs.items()
+
+        for key, value in inputs.items()
+
     }
+
 
     with torch.inference_mode():
 
@@ -389,16 +290,19 @@ def generate_answer(question):
             eos_token_id=tokenizer.eos_token_id,
         )
 
-    generated_tokens = output[0][
+
+    new_tokens = output[0][
         inputs["input_ids"].shape[1]:
     ]
 
+
     answer = tokenizer.decode(
 
-        generated_tokens,
+        new_tokens,
 
-        skip_special_tokens=True,
+        skip_special_tokens=True
     )
+
 
     return answer.strip()
 
@@ -416,53 +320,69 @@ def handler(job):
             {}
         )
 
-        question = get_user_message(
+
+        question = get_question(
             job_input
         )
+
 
         if not question:
 
             return {
+
                 "success": False,
+
                 "error": "質問が入力されていません。"
+
             }
 
-        print(
-            "USER:",
-            question
-        )
+
+        print("USER:", question)
+
 
         answer = generate_answer(
             question
         )
 
-        print(
-            "ATENA:",
-            answer
-        )
+
+        print("ATENA:", answer)
+
 
         return {
+
             "success": True,
+
             "answer": answer,
+
             "model": "AI ATENA 7B v9"
+
         }
+
 
     except Exception as e:
 
         traceback.print_exc()
 
+
         return {
+
             "success": False,
+
             "error": str(e)
+
         }
 
 
 # ============================================================
-# Serverless起動
+# Serverless
 # ============================================================
 
 runpod.serverless.start(
+
     {
+
         "handler": handler
+
     }
+
 )
