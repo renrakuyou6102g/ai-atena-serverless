@@ -1,22 +1,28 @@
-FROM runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
-WORKDIR /app
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV HF_HOME=/workspace/huggingface
+ENV TRANSFORMERS_CACHE=/workspace/huggingface
 
-RUN apt-get update \
-    && apt-get install -y unzip \
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-dev \
+    git \
+    wget \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+WORKDIR /workspace
 
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt /workspace/requirements.txt
 
-COPY handler.py .
+RUN python3 -m pip install --upgrade pip
 
-COPY AI_ATENA_v3.zip /tmp/AI_ATENA_v3.zip
+RUN pip3 install --no-cache-dir \
+    -r /workspace/requirements.txt
 
-RUN mkdir -p /workspace/AI_ATENA_v3 \
-    && unzip /tmp/AI_ATENA_v3.zip -d /workspace/AI_ATENA_v3 \
-    && rm /tmp/AI_ATENA_v3.zip \
-    && find /workspace/AI_ATENA_v3 -maxdepth 3 -type f
+COPY handler.py /workspace/handler.py
 
-CMD ["python", "-u", "handler.py"]
+CMD ["python3", "-u", "/workspace/handler.py"]
