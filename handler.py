@@ -20,7 +20,8 @@ from peft import PeftModel
 BASE_MODEL_DIR = "/workspace/base_model"
 ATENA_ROOT = "/workspace/atena_v9"
 
-MAX_NEW_TOKENS = 300
+# 300 → 128 に短縮
+MAX_NEW_TOKENS = 128
 
 
 # ============================================================
@@ -29,51 +30,26 @@ MAX_NEW_TOKENS = 300
 
 SYSTEM_PROMPT = """
 あなたはAI ATENAです。
-必ず自然な日本語で回答してください。
+自然な日本語で回答してください。
 
-【ATENA】
-AI ATENAは、JIGUZAGAで利用できるAIアシスタントとして
-開発されています。
+AI ATENAは、JIGUZAGAで利用できるAIアシスタントです。
 
-JIGUZAGA内で、
-質問対応、
-Web検索、
-文章作成、
-要約などを支援します。
-
-【JIGUZAGA】
 JIGUZAGAは、
 ショート動画、
 LIVE配信、
 AI、
-ショッピングなどを
-統合したプラットフォームです。
+ショッピングなどを統合したプラットフォームです。
 
-株価予測だけを目的とした
-投資サービスではありません。
-
-【JIGUMAP】
 JIGUMAPは、
 位置情報付き動画やライブ情報などを
-地図上で扱うための
-JIGUZAGAのマップ機能です。
+地図上で扱うJIGUZAGAのマップ機能です。
 
-【制限】
 予約機能は現在実装されていません。
-
-予約を実行した、
-予約できる、
-などと回答しないでください。
-
-xAI、
-Alibaba、
-アリババクラウド、
-NTTドコモ、
-証券取引所などを
-ATENAの運営元として勝手に作らないでください。
 
 確認できない情報を
 作り話で補わないでください。
+
+現在の質問を最優先してください。
 """
 
 
@@ -86,12 +62,16 @@ def find_adapter_dir(root):
     for current_root, dirs, files in os.walk(root):
 
         if "adapter_config.json" in files:
+
             return current_root
 
     return None
 
 
-ADAPTER_DIR = find_adapter_dir(ATENA_ROOT)
+ADAPTER_DIR = find_adapter_dir(
+    ATENA_ROOT
+)
+
 
 if ADAPTER_DIR is None:
 
@@ -113,9 +93,13 @@ print("=" * 60)
 
 print("Loading tokenizer...")
 
+
 tokenizer = AutoTokenizer.from_pretrained(
+
     BASE_MODEL_DIR,
+
     local_files_only=True,
+
     trust_remote_code=True
 )
 
@@ -142,6 +126,7 @@ bnb_config = BitsAndBytesConfig(
 
 print("Loading local Qwen 7B...")
 
+
 base_model = AutoModelForCausalLM.from_pretrained(
 
     BASE_MODEL_DIR,
@@ -166,18 +151,31 @@ base_model = AutoModelForCausalLM.from_pretrained(
 
 print("Loading ATENA v9 LoRA...")
 
+
 model = PeftModel.from_pretrained(
 
     base_model,
 
     ADAPTER_DIR,
 
-    is_trainable=False,
+    is_trainable=False
 )
+
 
 model.eval()
 
 model.config.use_cache = True
+
+
+# ============================================================
+# PAD設定
+# ============================================================
+
+if tokenizer.pad_token_id is None:
+
+    tokenizer.pad_token_id = (
+        tokenizer.eos_token_id
+    )
 
 
 print("=" * 60)
@@ -193,31 +191,53 @@ def get_question(job_input):
 
     prompt = job_input.get("prompt")
 
-    if isinstance(prompt, str) and prompt.strip():
+
+    if (
+        isinstance(prompt, str)
+        and prompt.strip()
+    ):
+
         return prompt.strip()
 
 
     message = job_input.get("message")
 
-    if isinstance(message, str) and message.strip():
+
+    if (
+        isinstance(message, str)
+        and message.strip()
+    ):
+
         return message.strip()
 
 
     messages = job_input.get("messages")
+
 
     if isinstance(messages, list):
 
         for msg in reversed(messages):
 
             if not isinstance(msg, dict):
+
                 continue
+
 
             if msg.get("role") == "user":
 
-                content = msg.get("content", "")
+                content = msg.get(
+                    "content",
+                    ""
+                )
 
-                if isinstance(content, str):
+
+                if isinstance(
+                    content,
+                    str
+                ):
+
                     return content.strip()
+
 
     return ""
 
@@ -239,7 +259,6 @@ def generate_answer(question):
             "role": "user",
             "content": question
         }
-
     ]
 
 
@@ -257,21 +276,42 @@ def generate_answer(question):
 
         prompt,
 
-        return_tensors="pt"
+        return_tensors="pt",
+
+        truncation=True,
+
+        max_length=2048
     )
 
 
-    device = next(model.parameters()).device
+    device = next(
+        model.parameters()
+    ).device
 
 
     inputs = {
 
         key: value.to(device)
 
-        for key, value in inputs.items()
-
+        for key, value
+        in inputs.items()
     }
 
+
+    input_length = (
+        inputs["input_ids"].shape[1]
+    )
+
+
+    print(
+        "INPUT TOKENS:",
+        input_length
+    )
+
+
+    # ========================================================
+    # 推論
+    # ========================================================
 
     with torch.inference_mode():
 
@@ -279,20 +319,23 @@ def generate_answer(question):
 
             **inputs,
 
-            max_new_tokens=MAX_NEW_TOKENS,
+            max_new_tokens=
+                MAX_NEW_TOKENS,
 
             do_sample=False,
 
-            repetition_penalty=1.1,
+            use_cache=True,
 
-            pad_token_id=tokenizer.eos_token_id,
+            pad_token_id=
+                tokenizer.eos_token_id,
 
-            eos_token_id=tokenizer.eos_token_id,
+            eos_token_id=
+                tokenizer.eos_token_id,
         )
 
 
     new_tokens = output[0][
-        inputs["input_ids"].shape[1]:
+        input_length:
     ]
 
 
@@ -315,6 +358,11 @@ def handler(job):
 
     try:
 
+        print("=" * 60)
+        print("JOB START")
+        print("=" * 60)
+
+
         job_input = job.get(
             "input",
             {}
@@ -332,12 +380,15 @@ def handler(job):
 
                 "success": False,
 
-                "error": "質問が入力されていません。"
-
+                "error":
+                    "質問が入力されていません。"
             }
 
 
-        print("USER:", question)
+        print(
+            "USER:",
+            question[:500]
+        )
 
 
         answer = generate_answer(
@@ -345,7 +396,15 @@ def handler(job):
         )
 
 
-        print("ATENA:", answer)
+        print(
+            "ATENA:",
+            answer
+        )
+
+
+        print("=" * 60)
+        print("JOB FINISHED")
+        print("=" * 60)
 
 
         return {
@@ -354,8 +413,8 @@ def handler(job):
 
             "answer": answer,
 
-            "model": "AI ATENA 7B v9"
-
+            "model":
+                "AI ATENA 7B v9"
         }
 
 
@@ -369,7 +428,6 @@ def handler(job):
             "success": False,
 
             "error": str(e)
-
         }
 
 
