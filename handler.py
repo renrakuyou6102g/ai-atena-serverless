@@ -60,16 +60,12 @@ JIGUZAGAの地図機能です。
 def find_adapter_dir(root):
 
     if not os.path.isdir(root):
-
         return None
-
 
     for current_root, dirs, files in os.walk(root):
 
         if "adapter_config.json" in files:
-
             return current_root
-
 
     return None
 
@@ -131,14 +127,6 @@ if tokenizer.pad_token_id is None:
 
 # ============================================================
 # vLLM
-# ============================================================
-#
-# 初回Worker起動時だけ
-# Qwen2.5-7BをHugging Faceから取得します。
-#
-# Active Worker = 1なら
-# モデルを読み込んだ状態を維持できます。
-#
 # ============================================================
 
 print(
@@ -215,10 +203,6 @@ print("=" * 70)
 
 def get_question(job_input):
 
-    # --------------------------------
-    # prompt
-    # --------------------------------
-
     prompt = job_input.get(
         "prompt"
     )
@@ -227,13 +211,8 @@ def get_question(job_input):
         isinstance(prompt, str)
         and prompt.strip()
     ):
-
         return prompt.strip()
 
-
-    # --------------------------------
-    # message
-    # --------------------------------
 
     message = job_input.get(
         "message"
@@ -243,13 +222,8 @@ def get_question(job_input):
         isinstance(message, str)
         and message.strip()
     ):
-
         return message.strip()
 
-
-    # --------------------------------
-    # messages
-    # --------------------------------
 
     messages = job_input.get(
         "messages"
@@ -268,14 +242,12 @@ def get_question(job_input):
                 msg,
                 dict
             ):
-
                 continue
 
 
             if msg.get(
                 "role"
             ) != "user":
-
                 continue
 
 
@@ -292,7 +264,6 @@ def get_question(job_input):
                 )
                 and content.strip()
             ):
-
                 return content.strip()
 
 
@@ -357,10 +328,6 @@ def generate_answer(
     )
 
 
-    # --------------------------------
-    # 入力トークン数
-    # --------------------------------
-
     input_ids = (
         tokenizer.encode(
 
@@ -376,10 +343,6 @@ def generate_answer(
         len(input_ids)
     )
 
-
-    # --------------------------------
-    # 高速生成設定
-    # --------------------------------
 
     sampling_params = SamplingParams(
 
@@ -414,10 +377,6 @@ def generate_answer(
         - generation_start
     )
 
-
-    # --------------------------------
-    # 回答
-    # --------------------------------
 
     result = (
         outputs[0]
@@ -514,7 +473,6 @@ def handler(
             job_input,
             dict
         ):
-
             job_input = {}
 
 
