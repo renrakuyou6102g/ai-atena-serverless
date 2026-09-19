@@ -5,6 +5,10 @@ ENV PYTHONUNBUFFERED=1
 
 ENV HF_HOME=/workspace/huggingface
 ENV HUGGINGFACE_HUB_CACHE=/workspace/huggingface/hub
+
+# RunPodベースイメージ側のhf_transfer高速DLを無効化
+ENV HF_HUB_ENABLE_HF_TRANSFER=0
+
 ENV TOKENIZERS_PARALLELISM=false
 
 WORKDIR /workspace
