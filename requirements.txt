@@ -1,9 +1,6 @@
-runpod
-torch
-transformers
-accelerate
-peft
-bitsandbytes
-safetensors
+runpod>=1.7.0
+vllm>=0.10.0
+transformers>=4.51.0
+peft>=0.15.0
+safetensors>=0.5.0
 sentencepiece
-huggingface_hub
