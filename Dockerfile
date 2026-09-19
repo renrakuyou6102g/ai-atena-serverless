@@ -2,7 +2,9 @@ FROM runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+
 ENV HF_HOME=/workspace/huggingface
+ENV HUGGINGFACE_HUB_CACHE=/workspace/huggingface/hub
 ENV TOKENIZERS_PARALLELISM=false
 
 WORKDIR /workspace
@@ -35,23 +37,7 @@ RUN pip install \
 
 
 # ============================================================
-# Qwen2.5-7BをDockerイメージ内に保存
-# ============================================================
-
-RUN python - <<'PY'
-from huggingface_hub import snapshot_download
-
-snapshot_download(
-    repo_id="Qwen/Qwen2.5-7B-Instruct",
-    local_dir="/workspace/base_model"
-)
-
-print("Qwen download completed.")
-PY
-
-
-# ============================================================
-# AI ATENA v9 LoRA
+# ATENA v9 LoRA
 # ============================================================
 
 COPY ATENA_7B_v9.zip /workspace/ATENA_7B_v9.zip
@@ -66,9 +52,11 @@ RUN mkdir -p /workspace/atena_v9 && \
 # LoRA確認
 # ============================================================
 
-RUN echo "=== ATENA v9 files ===" && \
+RUN echo "====================================" && \
+    echo "ATENA v9 FILES" && \
+    echo "====================================" && \
     find /workspace/atena_v9 \
-        -maxdepth 4 \
+        -maxdepth 5 \
         -type f | head -100
 
 
