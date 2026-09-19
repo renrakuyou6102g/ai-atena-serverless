@@ -28,7 +28,9 @@ RUN apt-get update && \
 
 COPY requirements.txt /workspace/requirements.txt
 
-RUN pip install --no-cache-dir \
+RUN pip install \
+    --no-cache-dir \
+    --ignore-installed \
     -r /workspace/requirements.txt
 
 
