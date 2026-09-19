@@ -1,27 +1,29 @@
 import os
+import time
 import traceback
 
-import torch
 import runpod
 
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    BitsAndBytesConfig,
-)
-
-from peft import PeftModel
+from transformers import AutoTokenizer
+from vllm import LLM, SamplingParams
+from vllm.lora.request import LoRARequest
 
 
 # ============================================================
-# パス
+# AI ATENA vLLM
 # ============================================================
 
+MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
+
+# Docker内にモデルを保存する場所
 BASE_MODEL_DIR = "/workspace/base_model"
+
+# ATENA v9 LoRA
 ATENA_ROOT = "/workspace/atena_v9"
 
-# 300 → 128 に短縮
-MAX_NEW_TOKENS = 128
+MAX_NEW_TOKENS = 96
+
+MAX_MODEL_LEN = 2048
 
 
 # ============================================================
@@ -30,39 +32,29 @@ MAX_NEW_TOKENS = 128
 
 SYSTEM_PROMPT = """
 あなたはAI ATENAです。
-自然な日本語で回答してください。
+JIGUZAGAのAIアシスタントとして自然な日本語で回答してください。
 
-AI ATENAは、JIGUZAGAで利用できるAIアシスタントです。
+JIGUZAGAはショート動画、LIVE、AI、ショッピング等を統合したサービスです。
+JIGUMAPは位置情報付き動画やライブ情報を扱う地図機能です。
 
-JIGUZAGAは、
-ショート動画、
-LIVE配信、
-AI、
-ショッピングなどを統合したプラットフォームです。
-
-JIGUMAPは、
-位置情報付き動画やライブ情報などを
-地図上で扱うJIGUZAGAのマップ機能です。
-
-予約機能は現在実装されていません。
-
-確認できない情報を
-作り話で補わないでください。
-
-現在の質問を最優先してください。
-"""
+予約機能は現在未実装です。
+確認できない情報を作り話で補わないでください。
+ユーザーの現在の質問を最優先してください。
+""".strip()
 
 
 # ============================================================
-# LoRAディレクトリ検索
+# LoRA検索
 # ============================================================
 
-def find_adapter_dir(root):
+def find_adapter_dir(root: str):
+
+    if not os.path.isdir(root):
+        return None
 
     for current_root, dirs, files in os.walk(root):
 
         if "adapter_config.json" in files:
-
             return current_root
 
     return None
@@ -72,18 +64,17 @@ ADAPTER_DIR = find_adapter_dir(
     ATENA_ROOT
 )
 
-
 if ADAPTER_DIR is None:
 
     raise RuntimeError(
-        "ATENA v9のadapter_config.jsonが見つかりません。"
+        f"ATENA LoRAが見つかりません: {ATENA_ROOT}"
     )
 
 
 print("=" * 60)
-print("AI ATENA 7B v9 STARTING")
-print("BASE MODEL:", BASE_MODEL_DIR)
-print("ADAPTER:", ADAPTER_DIR)
+print("AI ATENA vLLM STARTING")
+print("MODEL:", BASE_MODEL_DIR)
+print("LORA:", ADAPTER_DIR)
 print("=" * 60)
 
 
@@ -91,95 +82,78 @@ print("=" * 60)
 # Tokenizer
 # ============================================================
 
-print("Loading tokenizer...")
-
-
 tokenizer = AutoTokenizer.from_pretrained(
 
     BASE_MODEL_DIR,
 
-    local_files_only=True,
+    trust_remote_code=True,
 
-    trust_remote_code=True
+    local_files_only=True
 )
 
 
 # ============================================================
-# 4bit
+# vLLM
+# ============================================================
+#
+# 24GB GPU以上推奨
+#
+# FP16 Qwen2.5 7B
+# +
+# LoRA
+# +
+# KV Cache
+#
 # ============================================================
 
-bnb_config = BitsAndBytesConfig(
-
-    load_in_4bit=True,
-
-    bnb_4bit_quant_type="nf4",
-
-    bnb_4bit_compute_dtype=torch.float16,
-
-    bnb_4bit_use_double_quant=True,
-)
+load_start = time.time()
 
 
-# ============================================================
-# Base Model
-# ============================================================
+llm = LLM(
 
-print("Loading local Qwen 7B...")
+    model=BASE_MODEL_DIR,
 
+    tokenizer=BASE_MODEL_DIR,
 
-base_model = AutoModelForCausalLM.from_pretrained(
-
-    BASE_MODEL_DIR,
-
-    local_files_only=True,
-
-    quantization_config=bnb_config,
-
-    device_map="auto",
-
-    torch_dtype=torch.float16,
-
-    low_cpu_mem_usage=True,
+    dtype="float16",
 
     trust_remote_code=True,
+
+    enable_lora=True,
+
+    max_lora_rank=64,
+
+    max_model_len=MAX_MODEL_LEN,
+
+    gpu_memory_utilization=0.90,
+
+    enable_prefix_caching=True,
+
+    max_num_seqs=8,
+
+    disable_log_stats=True,
+
+    enforce_eager=False,
 )
 
 
-# ============================================================
-# LoRA
-# ============================================================
+ATENA_LORA = LoRARequest(
 
-print("Loading ATENA v9 LoRA...")
+    "atena-v9",
 
+    1,
 
-model = PeftModel.from_pretrained(
-
-    base_model,
-
-    ADAPTER_DIR,
-
-    is_trainable=False
+    ADAPTER_DIR
 )
 
 
-model.eval()
-
-model.config.use_cache = True
-
-
-# ============================================================
-# PAD設定
-# ============================================================
-
-if tokenizer.pad_token_id is None:
-
-    tokenizer.pad_token_id = (
-        tokenizer.eos_token_id
-    )
-
+print(
+    "MODEL LOAD SEC:",
+    round(time.time() - load_start, 2)
+)
 
 print("=" * 60)
-print("AI ATENA 7B v9 READY")
+print("AI ATENA vLLM READY")
 print("=" * 60)
 
 
@@ -189,64 +163,60 @@ print("=" * 60)
 
 def get_question(job_input):
 
+    # prompt
     prompt = job_input.get("prompt")
-
 
     if (
         isinstance(prompt, str)
         and prompt.strip()
     ):
-
         return prompt.strip()
 
 
+    # message
     message = job_input.get("message")
-
 
     if (
         isinstance(message, str)
         and message.strip()
     ):
-
         return message.strip()
 
 
+    # messages
     messages = job_input.get("messages")
-
 
     if isinstance(messages, list):
 
         for msg in reversed(messages):
 
             if not isinstance(msg, dict):
-
                 continue
 
+            if msg.get("role") != "user":
+                continue
 
-            if msg.get("role") == "user":
+            content = msg.get(
+                "content",
+                ""
+            )
 
-                content = msg.get(
-                    "content",
-                    ""
-                )
+            if (
+                isinstance(content, str)
+                and content.strip()
+            ):
 
-
-                if isinstance(
-                    content,
-                    str
-                ):
-
-                    return content.strip()
+                return content.strip()
 
 
     return ""
 
 
 # ============================================================
-# 推論
+# Prompt
 # ============================================================
 
-def generate_answer(question):
+def build_prompt(question):
 
     messages = [
 
@@ -259,6 +229,7 @@ def generate_answer(question):
             "role": "user",
             "content": question
         }
+
     ]
 
 
@@ -272,82 +243,113 @@ def generate_answer(question):
     )
 
 
-    inputs = tokenizer(
+    return prompt
 
-        prompt,
 
-        return_tensors="pt",
+# ============================================================
+# Generate
+# ============================================================
 
-        truncation=True,
+def generate_answer(question):
 
-        max_length=2048
+    prompt = build_prompt(
+        question
     )
 
 
-    device = next(
-        model.parameters()
-    ).device
-
-
-    inputs = {
-
-        key: value.to(device)
-
-        for key, value
-        in inputs.items()
-    }
-
-
-    input_length = (
-        inputs["input_ids"].shape[1]
+    token_count = len(
+        tokenizer.encode(
+            prompt,
+            add_special_tokens=False
+        )
     )
 
 
     print(
         "INPUT TOKENS:",
-        input_length
+        token_count
     )
 
 
-    # ========================================================
-    # 推論
-    # ========================================================
+    # ------------------------------------
+    # 短文中心の高速設定
+    # ------------------------------------
 
-    with torch.inference_mode():
+    sampling_params = SamplingParams(
 
-        output = model.generate(
+        temperature=0.0,
 
-            **inputs,
+        max_tokens=MAX_NEW_TOKENS,
 
-            max_new_tokens=
-                MAX_NEW_TOKENS,
+        repetition_penalty=1.0,
 
-            do_sample=False,
+        stop_token_ids=[
+            tokenizer.eos_token_id
+        ]
+    )
 
-            use_cache=True,
 
-            pad_token_id=
-                tokenizer.eos_token_id,
+    start = time.time()
 
-            eos_token_id=
-                tokenizer.eos_token_id,
+
+    outputs = llm.generate(
+
+        [prompt],
+
+        sampling_params,
+
+        lora_request=ATENA_LORA
+    )
+
+
+    generation_sec = (
+        time.time()
+        - start
+    )
+
+
+    answer = (
+        outputs[0]
+        .outputs[0]
+        .text
+        .strip()
+    )
+
+
+    generated_tokens = len(
+        outputs[0]
+        .outputs[0]
+        .token_ids
+    )
+
+
+    print(
+        "GENERATED TOKENS:",
+        generated_tokens
+    )
+
+    print(
+        "GENERATION SEC:",
+        round(
+            generation_sec,
+            2
+        )
+    )
+
+
+    if generation_sec > 0:
+
+        print(
+            "TOKENS/SEC:",
+            round(
+                generated_tokens
+                / generation_sec,
+                2
+            )
         )
 
 
-    new_tokens = output[0][
-        input_length:
-    ]
-
-
-    answer = tokenizer.decode(
-
-        new_tokens,
-
-        skip_special_tokens=True
-    )
-
-
-    return answer.strip()
+    return answer
 
 
 # ============================================================
@@ -356,17 +358,34 @@ def generate_answer(question):
 
 def handler(job):
 
+    job_start = time.time()
+
+
     try:
 
         print("=" * 60)
-        print("JOB START")
-        print("=" * 60)
+
+        print(
+            "JOB ID:",
+            job.get(
+                "id",
+                "unknown"
+            )
+        )
 
 
         job_input = job.get(
             "input",
             {}
         )
+
+
+        if not isinstance(
+            job_input,
+            dict
+        ):
+
+            job_input = {}
 
 
         question = get_question(
@@ -396,14 +415,25 @@ def handler(job):
         )
 
 
-        print(
-            "ATENA:",
-            answer
+        total_sec = (
+            time.time()
+            - job_start
         )
 
 
-        print("=" * 60)
-        print("JOB FINISHED")
+        print(
+            "ANSWER:",
+            answer[:1000]
+        )
+
+        print(
+            "TOTAL SEC:",
+            round(
+                total_sec,
+                2
+            )
+        )
+
         print("=" * 60)
 
 
@@ -414,7 +444,10 @@ def handler(job):
             "answer": answer,
 
             "model":
-                "AI ATENA 7B v9"
+                "AI ATENA 7B v9 vLLM",
+
+            "generation_seconds":
+                round(total_sec, 2)
         }
 
 
@@ -427,12 +460,15 @@ def handler(job):
 
             "success": False,
 
-            "error": str(e)
+            "error": str(e),
+
+            "model":
+                "AI ATENA 7B v9 vLLM"
         }
 
 
 # ============================================================
-# Serverless
+# RunPod Serverless
 # ============================================================
 
 runpod.serverless.start(
