@@ -15,7 +15,7 @@ from vllm.lora.request import LoRARequest
 
 
 # ============================================================
-# AI ATENA 設定
+# AI ATENA
 # ============================================================
 
 MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
@@ -54,7 +54,7 @@ JIGUZAGAの地図機能です。
 
 
 # ============================================================
-# LoRAフォルダ検索
+# LoRA検索
 # ============================================================
 
 def find_adapter_dir(root):
@@ -83,21 +83,9 @@ if ADAPTER_DIR is None:
 
 
 print("=" * 70)
-
-print(
-    "AI ATENA vLLM STARTING"
-)
-
-print(
-    "BASE MODEL:",
-    MODEL_NAME
-)
-
-print(
-    "ATENA LORA:",
-    ADAPTER_DIR
-)
-
+print("AI ATENA vLLM STARTING")
+print("MODEL:", MODEL_NAME)
+print("LORA:", ADAPTER_DIR)
 print("=" * 70)
 
 
@@ -105,9 +93,7 @@ print("=" * 70)
 # Tokenizer
 # ============================================================
 
-print(
-    "Loading tokenizer..."
-)
+print("Loading tokenizer...")
 
 
 tokenizer = AutoTokenizer.from_pretrained(
@@ -126,7 +112,7 @@ if tokenizer.pad_token_id is None:
 
 
 # ============================================================
-# vLLM
+# vLLMモデル
 # ============================================================
 
 print(
@@ -143,6 +129,8 @@ llm = LLM(
 
     tokenizer=MODEL_NAME,
 
+    task="generate",
+
     trust_remote_code=True,
 
     dtype="float16",
@@ -151,7 +139,8 @@ llm = LLM(
 
     max_model_len=MAX_MODEL_LEN,
 
-    gpu_memory_utilization=0.90,
+    # RTX A5000 24GBを考慮
+    gpu_memory_utilization=0.88,
 
     enable_prefix_caching=True,
 
@@ -159,15 +148,23 @@ llm = LLM(
 
     max_lora_rank=64,
 
-    max_num_seqs=8
+    max_num_seqs=4,
+
+    # 安定性優先
+    enforce_eager=True,
+)
+
+
+model_load_time = (
+    time.time()
+    - model_load_start
 )
 
 
 print(
     "MODEL LOAD:",
     round(
-        time.time()
-        - model_load_start,
+        model_load_time,
         2
     ),
     "sec"
@@ -189,11 +186,7 @@ ATENA_LORA = LoRARequest(
 
 
 print("=" * 70)
-
-print(
-    "AI ATENA vLLM READY"
-)
-
+print("AI ATENA vLLM READY")
 print("=" * 70)
 
 
@@ -203,6 +196,7 @@ print("=" * 70)
 
 def get_question(job_input):
 
+    # prompt
     prompt = job_input.get(
         "prompt"
     )
@@ -214,6 +208,7 @@ def get_question(job_input):
         return prompt.strip()
 
 
+    # message
     message = job_input.get(
         "message"
     )
@@ -225,6 +220,7 @@ def get_question(job_input):
         return message.strip()
 
 
+    # messages
     messages = job_input.get(
         "messages"
     )
@@ -264,6 +260,7 @@ def get_question(job_input):
                 )
                 and content.strip()
             ):
+
                 return content.strip()
 
 
@@ -271,12 +268,10 @@ def get_question(job_input):
 
 
 # ============================================================
-# Prompt作成
+# Prompt
 # ============================================================
 
-def build_prompt(
-    question
-):
+def build_prompt(question):
 
     messages = [
 
@@ -299,42 +294,32 @@ def build_prompt(
     ]
 
 
-    prompt = (
-        tokenizer
-        .apply_chat_template(
+    return tokenizer.apply_chat_template(
 
-            messages,
+        messages,
 
-            tokenize=False,
+        tokenize=False,
 
-            add_generation_prompt=True
-        )
+        add_generation_prompt=True
     )
-
-
-    return prompt
 
 
 # ============================================================
 # Generate
 # ============================================================
 
-def generate_answer(
-    question
-):
+def generate_answer(question):
 
     prompt = build_prompt(
         question
     )
 
 
-    input_ids = (
-        tokenizer.encode(
+    input_ids = tokenizer.encode(
 
-            prompt,
+        prompt,
 
-            add_special_tokens=False
-        )
+        add_special_tokens=False
     )
 
 
@@ -351,7 +336,11 @@ def generate_answer(
         max_tokens=
             MAX_NEW_TOKENS,
 
-        repetition_penalty=1.0
+        repetition_penalty=1.0,
+
+        stop_token_ids=[
+            tokenizer.eos_token_id
+        ]
     )
 
 
@@ -437,9 +426,7 @@ def generate_answer(
 # RunPod Handler
 # ============================================================
 
-def handler(
-    job
-):
+def handler(job):
 
     total_start = (
         time.time()
@@ -566,8 +553,10 @@ def handler(
     except Exception as e:
 
         print(
-            "ATENA ERROR:"
+            "ATENA ERROR:",
+            str(e)
         )
+
 
         traceback.print_exc()
 
@@ -586,7 +575,7 @@ def handler(
 
 
 # ============================================================
-# RunPod Serverless
+# RunPod
 # ============================================================
 
 runpod.serverless.start(
