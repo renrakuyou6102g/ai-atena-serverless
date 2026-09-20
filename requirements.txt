@@ -1,7 +1,7 @@
-runpod
-vllm
-transformers
-peft
-safetensors
-sentencepiece
-huggingface_hub
+runpod==1.7.13
+vllm==0.8.5.post1
+transformers==4.51.3
+peft==0.15.2
+safetensors==0.5.3
+sentencepiece==0.2.0
+huggingface_hub==0.30.2
