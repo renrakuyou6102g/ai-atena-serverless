@@ -1,4 +1,6 @@
-FROM runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404
+FROM vllm/vllm-openai:v0.8.5.post1
+
+USER root
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -6,7 +8,7 @@ ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/workspace/huggingface
 ENV HUGGINGFACE_HUB_CACHE=/workspace/huggingface/hub
 
-# RunPodベースイメージ側のhf_transfer高速DLを無効化
+# hf_transfer関連エラー回避
 ENV HF_HUB_ENABLE_HF_TRANSFER=0
 
 ENV TOKENIZERS_PARALLELISM=false
@@ -15,28 +17,25 @@ WORKDIR /workspace
 
 
 # ============================================================
-# 基本ツール
+# 必要ツール
 # ============================================================
 
 RUN apt-get update && \
     apt-get install -y \
-        git \
-        git-lfs \
+        unzip \
         curl \
-        wget \
-        unzip && \
+        wget && \
     rm -rf /var/lib/apt/lists/*
 
 
 # ============================================================
-# Python packages
+# RunPod Serverless
 # ============================================================
 
 COPY requirements.txt /workspace/requirements.txt
 
 RUN pip install \
     --no-cache-dir \
-    --ignore-installed \
     -r /workspace/requirements.txt
 
 
@@ -56,9 +55,9 @@ RUN mkdir -p /workspace/atena_v9 && \
 # LoRA確認
 # ============================================================
 
-RUN echo "====================================" && \
+RUN echo "==========================" && \
     echo "ATENA v9 FILES" && \
-    echo "====================================" && \
+    echo "==========================" && \
     find /workspace/atena_v9 \
         -maxdepth 5 \
         -type f | head -100
@@ -71,8 +70,12 @@ RUN echo "====================================" && \
 COPY handler.py /workspace/handler.py
 
 
+# vLLM公式イメージのデフォルトENTRYPOINTを解除
+ENTRYPOINT []
+
+
 # ============================================================
-# Run
+# 起動
 # ============================================================
 
-CMD ["python", "-u", "/workspace/handler.py"]
+CMD ["python3", "-u", "/workspace/handler.py"]
